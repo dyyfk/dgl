@@ -4,11 +4,11 @@ import pickle
 import numpy as np
 
 from .. import backend as F
-from ..base import DGLError
+from ..base import DGLError, BlockSampler
 from ..partition import metis_partition_assignment
 from .base import set_node_lazy_features, set_edge_lazy_features, Sampler
 
-class ClusterGCNSampler(Sampler):
+class ClusterGCNSampler(BlockSampler):
     """Cluster sampler from `Cluster-GCN: An Efficient Algorithm for Training
     Deep and Large Graph Convolutional Networks
     <https://arxiv.org/abs/1905.07953>`__
@@ -118,3 +118,20 @@ class ClusterGCNSampler(Sampler):
         set_node_lazy_features(sg, self.prefetch_ndata)
         set_edge_lazy_features(sg, self.prefetch_edata)
         return sg
+
+    
+    def sample_blocks(self, g, seed_nodes, exclude_eids=None):
+        output_nodes = seed_nodes
+        blocks = []
+        for fanout in reversed(self.fanouts):
+            frontier = g.sample_neighbors(
+                seed_nodes, fanout, edge_dir=self.edge_dir, prob=self.prob,
+                replace=self.replace, output_device=self.output_device,
+                exclude_edges=exclude_eids)
+            eid = frontier.edata[EID]
+            block = to_block(frontier, seed_nodes)
+            block.edata[EID] = eid
+            seed_nodes = block.srcdata[NID]
+            blocks.insert(0, block)
+
+        return seed_nodes, output_nodes, blocks
